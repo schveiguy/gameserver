@@ -1,0 +1,17 @@
+{
+	"authors": [
+		"Steven Schveighoffer"
+	],
+	"copyright": "Copyright © 2021, Steven Schveighoffer",
+	"dependencies": {
+		"enet-d": "~>0.0.1",
+                "jsoniopipe": "~>0.1.2"
+	},
+	"description": "Server to host games using enet",
+	"license": "Boost-1.0",
+	"name": "gameserver",
+        "libs-windows": ["enet", "Ws2_32", "winmm"],
+        "libs-posix": ["enet"],
+        "lflags-posix": ["-L/Users/steves"],
+        "lflags-windows": ["/LIBPATH:C:\\dprojects\\enet-1.3.17"]
+}

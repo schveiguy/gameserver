@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/gameserver
+gameserver.so
+gameserver.dylib
+gameserver.dll
+gameserver.a
+gameserver.lib
+gameserver-test-*
+*.exe
+*.o
+*.obj
+*.lst
