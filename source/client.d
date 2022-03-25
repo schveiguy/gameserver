@@ -5,7 +5,9 @@ import iopipe.json.serialize;
 import iopipe.json.parser;
 import iopipe.bufpipe;
 import std.exception;
+import core.time;
 
+// for gethostbyname
 version(Windows)
     import core.sys.windows.winsock2;
 else version(Posix)
@@ -26,9 +28,11 @@ struct Client
     private {
     ENetHost *host;
     ENetPeer *server;
-    BufferPipe msg; // TODO: see if I can find a way to allocate packets directly with iopipe
+    BufferPipe msg;
 
     Converter[string] handlers;
+    void delegate(size_t) addClientHandler;
+    void delegate(size_t) removeClientHandler;
     }
 
     private struct Hello
@@ -80,15 +84,22 @@ struct Client
         else
         {
             // set up the server
+            // process client messages
+            onMsg(&processHello);
+            onMsg(&processClientAdded);
+            onMsg(&processClientRemoved);
             server = enet_host_connect(this.host, &addr, 2, 0);
             if(server is null)
                 throw new Exception("Error, attempt to connect to host failed");
+
+            // wait at least 1 second for the first client message
+            while(!id)
+            {
+                if(!process(1.seconds))
+                    throw new Exception("Did not get id from server!");
+            }
         }
 
-        // process client messages
-        onMsg(&processHello);
-        onMsg(&processClientAdded);
-        onMsg(&processClientRemoved);
     }
 
     void disconnect()
@@ -98,6 +109,7 @@ struct Client
             enet_peer_disconnect_later(server, 0);
             while(server !is null)
                 process();
+            id = 0;
         }
     }
     
@@ -114,6 +126,8 @@ struct Client
         {
             this.validPeers ~= ca.id;
             writeln("Peer added with id ", ca.id, " valid peers now ", validPeers);
+            if(this.addClientHandler)
+                this.addClientHandler(ca.id);
         }
     }
 
@@ -123,6 +137,8 @@ struct Client
         validPeers = validPeers.remove!(v => v == cr.id, SwapStrategy.unstable);
         validPeers.assumeSafeAppend;
         writeln("Peer removed with id ", cr.id, " valid peers now ", validPeers);
+        if(this.removeClientHandler)
+            this.removeClientHandler(cr.id);
     }
 
     void onMsg(T)(void delegate(size_t, T) dg)
@@ -143,6 +159,28 @@ struct Client
         onMsg(toDelegate(dg));
     }
 
+    void onRemoveClient(void delegate(size_t) dg)
+    {
+        removeClientHandler = dg;
+    }
+
+    void onRemoveClient(void function(size_t) dg)
+    {
+        import std.functional;
+        removeClientHandler = toDelegate(dg);
+    }
+
+    void onAddClient(void delegate(size_t) dg)
+    {
+        addClientHandler = dg;
+    }
+
+    void onAddClient(void function(size_t) dg)
+    {
+        import std.functional;
+        addClientHandler = toDelegate(dg);
+    }
+
     void send(T)(T value)
     {
         static struct msgStruct {
@@ -160,17 +198,21 @@ struct Client
         enet_peer_send(server, 0, pkt);
     }
 
-    // send and receive messages
-    void process()
+    // send and receive messages with a timeout for at least one message to arrive
+    bool process(Duration timeout = 0.seconds)
     {
         ENetEvent event;
+        bool result = false;
         while(true)
         {
-            auto res = enet_host_service(host, &event, 0);
+            auto res = enet_host_service(host, &event, cast(uint)timeout.total!"msecs");
+            // reset any timeout, next time we don't want to wait
+            timeout = 0.seconds;
             if(res < 0)
                 throw new Exception("Error in servicing host");
             if(res == 0)
-                return;
+                break;
+            result = true;
             final switch(event.type)
             {
             case ENET_EVENT_TYPE_NONE:
@@ -187,6 +229,7 @@ struct Client
                 break;
             }
         }
+        return result;
     }
 
     private void handlePacket(ref ENetEvent event)
@@ -209,12 +252,19 @@ struct Client
         item = tokens.next;
         jsonExpect(item, JSONToken.String, "Expected type name");
         auto converter = item.data(packetData) in handlers;
-        enforce(converter !is null);
-        tokens.rewind();
-        tokens.endCache();
-        enforce(tokens.parseTo("value"));
+        if(converter is null)
+        {
+            import std.stdio;
+            writeln("Cannot process message of type `", item.data(packetData), "`");
+        }
+        else
+        {
+            tokens.rewind();
+            tokens.endCache();
+            enforce(tokens.parseTo("value"));
 
-        // set up to process the value
-        converter.process(tokens, peerid, converter.dg);
+            // set up to process the value
+            converter.process(tokens, peerid, converter.dg);
+        }
     }
 }
