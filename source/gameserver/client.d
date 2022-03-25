@@ -42,18 +42,9 @@ struct Client
         addr.port = port;
         if(enet_address_set_host(&addr, host.toStringz) < 0)
         {
-        /*auto ent = gethostbyname(host.toStringz);
-        if(ent is null)
-        {*/
             // error
             throw new Exception("Error looking up host infomration for " ~ host);
         }
-        /*auto ipaddr = ent.h_addr_list;
-        if(!ipaddr || !*ipaddr)
-        {
-            throw new Exception("Not able to find valid IP address for " ~ host);
-        }
-        addr.host = (cast(in_addr*)*ipaddr).s_addr;*/
         if(server !is null)
         {
             if(server.address != addr)
