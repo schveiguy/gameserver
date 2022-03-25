@@ -40,7 +40,7 @@ struct Server
                 players.assumeSafeAppend;
                 // return true if this room can be removed. Room id 0 must
                 // always be present.
-                return id != 0 && players.length == 0;
+                return this.id != 0 && players.length == 0;
             }
         }
 
@@ -100,12 +100,14 @@ struct Server
             writeln("Ignoring malformed packet: ", eventmsg);
             return; // ignore this, no idea how to handle it
         }
+        scope(failure) writeln("Could not parse packet :", eventmsg);
         auto item = tokens.next;
         jsonExpect(item, JSONToken.String, "Expected type name");
         auto typename = item.data(eventmsg);
         if(typename == "MoveToRoom")
         {
             tokens.rewind();
+            tokens.endCache();
             if(!tokens.parseTo("value"))
             {
                 // ignore

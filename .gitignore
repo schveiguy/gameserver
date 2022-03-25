@@ -13,3 +13,7 @@ gameserver-test-*
 *.o
 *.obj
 *.lst
+.*.swp
+/server/gameserver_server
+libgameserver.a
+gameserver.lib

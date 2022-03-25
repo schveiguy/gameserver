@@ -100,7 +100,9 @@ struct Client
     {
         import std.algorithm : filter;
         import std.array : array;
+        import std.stdio;
         roomPeers = validPeers.filter!((ref c) => c.room_id == info.room_id).array;
+        writeln("room peers is now ", roomPeers);
     }
 
     private void processHello(size_t, Hello h) {
@@ -139,6 +141,14 @@ struct Client
         import std.algorithm : find, remove, SwapStrategy;
         import std.range : empty, front;
         import std.stdio;
+        if(cic.info.id == info.id)
+        {
+            // I moved
+            info = cic.info;
+            buildRoomPeers();
+            return;
+        }
+        // otherwise, it's a peer
         auto searched = validPeers.find!((ref ci, cid) => ci.id == cid)(cic.info.id);
         if(searched.empty)
             writeln("Peer not found! ", cic.info);
