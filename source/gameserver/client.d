@@ -1,4 +1,6 @@
-module client;
+module gameserver.client;
+
+import gameserver.common;
 
 import enet.enet;
 import iopipe.json.serialize;
@@ -6,16 +8,6 @@ import iopipe.json.parser;
 import iopipe.bufpipe;
 import std.exception;
 import core.time;
-
-// for gethostbyname
-version(Windows)
-    import core.sys.windows.winsock2;
-else version(Posix)
-    import core.sys.posix.netdb;
-else
-    static assert(0, "Unknown OS");
-
-alias BufferPipe = typeof(bufd!char());
 
 struct Converter
 {
@@ -35,24 +27,12 @@ struct Client
     void delegate(size_t) removeClientHandler;
     }
 
-    private struct Hello
-    {
-        size_t id;
-        size_t[] clients;
-    }
-
-    private struct ClientAdded {
-        size_t id;
-    }
-
-    private struct ClientRemoved {
-        size_t id;
-    }
-
     // your id
-    size_t id = 0;
-    // list of peer clients
-    size_t[] validPeers;
+    ClientInfo info;
+    // list of peer clients (on the server)
+    ClientInfo[] validPeers;
+    // list of clients that are in my room.
+    ClientInfo[] roomPeers;
 
     void initialize(string host, ushort port) {
         import std.string;
@@ -60,18 +40,20 @@ struct Client
             this.host = enet_host_create(null, 1, 2, 0, 0);
         ENetAddress addr;
         addr.port = port;
-        auto ent = gethostbyname(host.toStringz);
-        if(ent is null)
+        if(enet_address_set_host(&addr, host.toStringz) < 0)
         {
+        /*auto ent = gethostbyname(host.toStringz);
+        if(ent is null)
+        {*/
             // error
             throw new Exception("Error looking up host infomration for " ~ host);
         }
-        auto ipaddr = ent.h_addr_list;
+        /*auto ipaddr = ent.h_addr_list;
         if(!ipaddr || !*ipaddr)
         {
             throw new Exception("Not able to find valid IP address for " ~ host);
         }
-        addr.host = (cast(in_addr*)*ipaddr).s_addr;
+        addr.host = (cast(in_addr*)*ipaddr).s_addr;*/
         if(server !is null)
         {
             if(server.address != addr)
@@ -88,12 +70,13 @@ struct Client
             onMsg(&processHello);
             onMsg(&processClientAdded);
             onMsg(&processClientRemoved);
+            onMsg(&processClientInfoChanged);
             server = enet_host_connect(this.host, &addr, 2, 0);
             if(server is null)
                 throw new Exception("Error, attempt to connect to host failed");
 
             // wait at least 1 second for the first client message
-            while(!id)
+            while(!info.id)
             {
                 if(!process(1.seconds))
                     throw new Exception("Did not get id from server!");
@@ -109,36 +92,62 @@ struct Client
             enet_peer_disconnect_later(server, 0);
             while(server !is null)
                 process();
-            id = 0;
+            info = ClientInfo.init;
         }
     }
     
+    private void buildRoomPeers()
+    {
+        import std.algorithm : filter;
+        import std.array : array;
+        roomPeers = validPeers.filter!((ref c) => c.room_id == info.room_id).array;
+    }
+
     private void processHello(size_t, Hello h) {
-        this.id = h.id;
+        this.info = h.info;
+
         this.validPeers = h.clients;
+        buildRoomPeers();
         import std.stdio;
-        writeln("Connected with id ", this.id, ", existing peers are ", validPeers);
+        writeln("Connected with info ", this.info, ", existing peers are ", validPeers);
     }
 
     private void processClientAdded(size_t, ClientAdded ca) {
         import std.stdio;
-        if(ca.id != this.id)
+        if(ca.info.id != this.info.id)
         {
-            this.validPeers ~= ca.id;
-            writeln("Peer added with id ", ca.id, " valid peers now ", validPeers);
+            this.validPeers ~= ca.info;
+            // TODO this should be done via logging
+            writeln("Peer added with info ", ca.info, " valid peers now ", validPeers);
             if(this.addClientHandler)
-                this.addClientHandler(ca.id);
+                this.addClientHandler(ca.info.id);
         }
     }
 
     private void processClientRemoved(size_t, ClientRemoved cr) {
         import std.algorithm : remove, SwapStrategy;
         import std.stdio;
-        validPeers = validPeers.remove!(v => v == cr.id, SwapStrategy.unstable);
+        validPeers = validPeers.remove!((ref v) => v.id == cr.id, SwapStrategy.stable);
         validPeers.assumeSafeAppend;
+        buildRoomPeers();
         writeln("Peer removed with id ", cr.id, " valid peers now ", validPeers);
         if(this.removeClientHandler)
             this.removeClientHandler(cr.id);
+    }
+
+    private void processClientInfoChanged(size_t, ClientInfoChanged cic) {
+        import std.algorithm : find, remove, SwapStrategy;
+        import std.range : empty, front;
+        import std.stdio;
+        auto searched = validPeers.find!((ref ci, cid) => ci.id == cid)(cic.info.id);
+        if(searched.empty)
+            writeln("Peer not found! ", cic.info);
+        else {
+            auto oldroom = searched.front.room_id;
+            searched.front = cic.info;
+            if(oldroom == info.room_id || cic.info.room_id == info.room_id)
+                buildRoomPeers();
+        }
     }
 
     void onMsg(T)(void delegate(size_t, T) dg)
@@ -183,11 +192,11 @@ struct Client
 
     void send(T)(T value)
     {
-        static struct msgStruct {
+        static struct MsgStruct {
             string typename;
             T value;
         }
-        auto packetData = msgStruct(T.stringof, value);
+        auto packetData = MsgStruct(T.stringof, value);
         import std.exception : enforce;
         enforce(server !is null, "Need to open connection first");
         // serialize to json, then put into a packet.

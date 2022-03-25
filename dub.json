@@ -10,8 +10,9 @@
 	"description": "Server to host games using enet",
 	"license": "Boost-1.0",
 	"name": "gameserver",
+        "subPackages" : [
+            "./server/"
+        ],
         "libs-windows": ["enet", "Ws2_32", "winmm"],
-        "libs-posix": ["enet"],
-        "lflags-posix": ["-L/Users/steves"],
-        "lflags-windows": ["/LIBPATH:C:\\dprojects\\enet-1.3.17"]
+        "libs-posix": ["enet"]
 }

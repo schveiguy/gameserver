@@ -1,10 +1,12 @@
 import std.stdio;
 import enet.enet;
 import server;
-import client;
+import gameserver.client;
+import gameserver.common;
 import core.stdc.signal;
 import core.thread;
 import std.datetime.stopwatch;
+import std.conv;
 
 __gshared bool running;
 
@@ -34,6 +36,10 @@ void main(string[] args)
                                  writeln("Got a chat message from ", peerid, ": ", c.msg);
                                  });
         // every 1 seconds, send a chat
+        if(args.length > 2) {
+            int targetRoom = args[2].to!int;
+            client.send(MoveToRoom(targetRoom));
+        }
         auto sw = StopWatch(AutoStart.yes);
         while(running)
         {

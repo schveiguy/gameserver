@@ -1,0 +1,13 @@
+{
+	"copyright": "Copyright © 2022, Steven Schveighoffer",
+	"dependencies": {
+		"gameserver": {
+                    "path" : "../"
+                }
+	},
+	"description": "Server to host games using enet",
+	"license": "Boost-1.0",
+	"name": "server",
+        "libs-windows": ["enet", "Ws2_32", "winmm"],
+        "libs-posix": ["enet"]
+}
