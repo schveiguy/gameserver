@@ -36,8 +36,10 @@ struct Server
             bool removePlayer(size_t id)
             {
                 import std.algorithm : remove, SwapStrategy;
+                auto origLen = players.length;
                 players = players.remove!(v => cast(size_t)v.data == id, SwapStrategy.stable);
                 players.assumeSafeAppend;
+                assert(players.length != origLen);
                 // return true if this room can be removed. Room id 0 must
                 // always be present.
                 return this.id != 0 && players.length == 0;
@@ -121,6 +123,7 @@ struct Server
                 rooms.length = rooms.length + 1;
                 rooms[$-1].id = ++roomId;
                 mtr.id = roomId;
+                writeln("Adding room id ", roomId);
             }
 
             auto room = getRoom(mtr.id);
@@ -244,18 +247,24 @@ struct Server
         auto packet = makePacket(clientRemoved);
         enet_host_broadcast(host, 0, packet);
         // ensure the peer is removed from the list and from its room
-        event.peer.data = null;
         import std.algorithm : remove, SwapStrategy;
+        auto origLen = players.length;
         players = players.remove!(v => v.id == client.id, SwapStrategy.stable);
+        assert(players.length != origLen);
         players.assumeSafeAppend;
         auto room = getRoom(client.room_id);
         assert(room);
         if(room.removePlayer(client.id))
             removeRoom(room);
+        // do this last. Because we use it to identify peers.
+        event.peer.data = null;
     }
 
     private void removeRoom(Room *ptr)
     {
+        assert(ptr.players.length == 0);
+        import std.stdio;
+        writeln("Removing room id ", ptr.id);
         size_t idx = ptr - rooms.ptr;
         assert(idx != 0 && idx < rooms.length);
         rooms[idx] = rooms[$-1];

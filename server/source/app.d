@@ -35,6 +35,9 @@ void main(string[] args)
         client.onMsg((size_t peerid, ChatMessage c) {
                                  writeln("Got a chat message from ", peerid, ": ", c.msg);
                                  });
+        client.onAddClient(ci => writeln("client added: ", ci));
+        client.onRemoveClient(ci => writeln("client removed: ", ci));
+        client.onClientMoved(ci => writeln("client moved to room: ", ci));
         // every 1 seconds, send a chat
         if(args.length > 2) {
             int targetRoom = args[2].to!int;
@@ -47,6 +50,7 @@ void main(string[] args)
             Thread.sleep(10.msecs);
             if(sw.peek > 1.seconds)
             {
+                writeln("Sending a message: ", args[1]);
                 client.send(ChatMessage(args[1]));
                 sw.reset;
             }

@@ -23,8 +23,9 @@ struct Client
     BufferPipe msg;
 
     Converter[string] handlers;
-    void delegate(size_t) addClientHandler;
-    void delegate(size_t) removeClientHandler;
+    void delegate(ClientInfo) addClientHandler;
+    void delegate(ClientInfo) removeClientHandler;
+    void delegate(ClientInfo) clientMovedHandler;
     }
 
     // your id
@@ -113,19 +114,21 @@ struct Client
             // TODO this should be done via logging
             writeln("Peer added with info ", ca.info, " valid peers now ", validPeers);
             if(this.addClientHandler)
-                this.addClientHandler(ca.info.id);
+                this.addClientHandler(ca.info);
         }
     }
 
     private void processClientRemoved(size_t, ClientRemoved cr) {
-        import std.algorithm : remove, SwapStrategy;
+        import std.algorithm : remove, countUntil, SwapStrategy;
         import std.stdio;
-        validPeers = validPeers.remove!((ref v) => v.id == cr.id, SwapStrategy.stable);
+        auto clientidx = validPeers.countUntil!((ref v, id) => v.id == id)(cr.id);
+        auto removed = validPeers[clientidx];
+        validPeers = validPeers.remove(clientidx);
         validPeers.assumeSafeAppend;
         buildRoomPeers();
         writeln("Peer removed with id ", cr.id, " valid peers now ", validPeers);
         if(this.removeClientHandler)
-            this.removeClientHandler(cr.id);
+            this.removeClientHandler(removed);
     }
 
     private void processClientInfoChanged(size_t, ClientInfoChanged cic) {
@@ -137,18 +140,23 @@ struct Client
             // I moved
             info = cic.info;
             buildRoomPeers();
-            return;
         }
-        // otherwise, it's a peer
-        auto searched = validPeers.find!((ref ci, cid) => ci.id == cid)(cic.info.id);
-        if(searched.empty)
-            writeln("Peer not found! ", cic.info);
-        else {
-            auto oldroom = searched.front.room_id;
-            searched.front = cic.info;
-            if(oldroom == info.room_id || cic.info.room_id == info.room_id)
-                buildRoomPeers();
+        else
+        {
+
+            // otherwise, it's a peer
+            auto searched = validPeers.find!((ref ci, cid) => ci.id == cid)(cic.info.id);
+            if(searched.empty)
+                writeln("Peer not found! ", cic.info);
+            else {
+                auto oldroom = searched.front.room_id;
+                searched.front = cic.info;
+                if(oldroom == info.room_id || cic.info.room_id == info.room_id)
+                    buildRoomPeers();
+            }
         }
+        if(clientMovedHandler)
+            clientMovedHandler(cic.info);
     }
 
     void onMsg(T)(void delegate(size_t, T) dg)
@@ -169,26 +177,37 @@ struct Client
         onMsg(toDelegate(dg));
     }
 
-    void onRemoveClient(void delegate(size_t) dg)
+    void onRemoveClient(void delegate(ClientInfo) dg)
     {
         removeClientHandler = dg;
     }
 
-    void onRemoveClient(void function(size_t) dg)
+    void onRemoveClient(void function(ClientInfo) dg)
     {
         import std.functional;
         removeClientHandler = toDelegate(dg);
     }
 
-    void onAddClient(void delegate(size_t) dg)
+    void onAddClient(void delegate(ClientInfo) dg)
     {
         addClientHandler = dg;
     }
 
-    void onAddClient(void function(size_t) dg)
+    void onAddClient(void function(ClientInfo) dg)
     {
         import std.functional;
         addClientHandler = toDelegate(dg);
+    }
+
+    void onClientMoved(void delegate(ClientInfo) dg)
+    {
+        clientMovedHandler = dg;
+    }
+
+    void onClientMoved(void function(ClientInfo) dg)
+    {
+        import std.functional;
+        clientMovedHandler = toDelegate(dg);
     }
 
     void send(T)(T value)
